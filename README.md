@@ -107,9 +107,9 @@ Mở trình duyệt: `http://localhost:8000/documents`
 ---
 
 ## 📫 5. Liên hệ
+- Họ và tên: Vũ Duy Thái
 - Khoa: Công nghệ thông tin - Trường Đại học Đại Nam
-- Phòng Lab: AIoTLab
-- Góp ý/Bug: tạo Issue hoặc liên hệ qua email trong phần thông tin giảng viên/lab
+- Liên hệ email: thaiitkk2004@gmail.com
 
 <p align="center">© 2025 Faculty of Information Technology, DaiNam University.</p>
 
