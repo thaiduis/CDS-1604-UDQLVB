@@ -55,9 +55,12 @@ Cấu trúc thư mục chính:
 ## 🖼️ 3. Một số hình ảnh hệ thống
 
 - Trang danh sách tài liệu, tìm kiếm nâng cao, phân trang (tối đa 5 mục/trang)
+
+  ![Server GUI](docs/quanly.png)
+  
 - Trang chi tiết với tìm kiếm trong nội dung, highlight không dấu và fuzzy, toast thông báo
 
-> Bạn có thể tham khảo thêm ảnh chụp màn hình trong thư mục `templates/` hoặc cập nhật phần này bằng ảnh dự án của bạn.
+  ![Server GUI](docs/chitiet.png)
 
 ---
 
