@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title if title else 'Quản lý văn bản' }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/dnu-styles.css">
+    <style>
+        /* Base Styles */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: var(--gray-800);
+            background: #ffffff !important;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: var(--space-6) var(--space-4);
+            position: relative;
+            z-index: 1;
+        }
+
+
+
+        /* Header */
+        header {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px) saturate(180%);
+            border-radius: var(--radius-xl);
+            padding: var(--space-8);
+            margin-bottom: var(--space-6);
+            box-shadow: var(--shadow-lg);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        header::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.05), rgba(139, 92, 246, 0.05));
+            pointer-events: none;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: var(--space-2);
+            letter-spacing: -0.02em;
+            position: relative;
+            z-index: 2;
+        }
+
+        header p {
+            position: relative;
+            z-index: 2;
+        }
+
+        /* Animations */
+        @keyframes grainShift {
+            0%, 100% { transform: translate(0, 0); }
+            10% { transform: translate(-5%, -5%); }
+            20% { transform: translate(5%, 5%); }
+            30% { transform: translate(-5%, 5%); }
+            40% { transform: translate(5%, -5%); }
+            50% { transform: translate(-5%, 0%); }
+            60% { transform: translate(5%, 0%); }
+            70% { transform: translate(0%, 5%); }
+            80% { transform: translate(0%, -5%); }
+            90% { transform: translate(5%, 5%); }
+        }
+
+        /* Alerts */
+        .alert {
+            padding: var(--space-4);
+            border-radius: var(--radius);
+            margin-bottom: var(--space-4);
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: var(--space-3);
+            position: relative;
+            overflow: hidden;
+            animation: slideDown 0.3s ease;
+        }
+
+        .alert-error {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+        }
+
+        .alert-success {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+        }
+
+        .alert-warning {
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--warning);
+            border: 1px solid rgba(245, 158, 11, 0.2);
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .container {
+                padding: var(--space-4) var(--space-3);
+            }
+            
+            header {
+                padding: var(--space-6);
+            }
+            
+            h1 {
+                font-size: 2rem;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            * {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+                scroll-behavior: auto !important;
+            }
+        }
+    </style>
+    <script>
+        // Show loading state on form submits
+        document.addEventListener('DOMContentLoaded', () => {
+            document.querySelectorAll('form').forEach(form => {
+                form.addEventListener('submit', () => {
+                    const btn = form.querySelector('button[type="submit"]');
+                    if (btn) {
+                        btn.disabled = true;
+                        const originalText = btn.innerHTML;
+                        btn.innerHTML = '<span class="loading-text">Đang xử lý...</span>';
+
+                        // Reset after timeout
+                        setTimeout(() => {
+                            btn.disabled = false;
+                            btn.innerHTML = originalText;
+                        }, 10000);
+                    }
+                    form.classList.add('loading');
+                });
+            });
+
+            // Add smooth scroll to internal links
+            document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+                anchor.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    document.querySelector(this.getAttribute('href')).scrollIntoView({
+                        behavior: 'smooth'
+                    });
+                });
+            });
+        });
+
+        // Toast styles injected once
+        (function ensureToastStyles(){
+            if (document.getElementById('toast-styles')) return;
+            const style = document.createElement('style');
+            style.id = 'toast-styles';
+            style.textContent = `
+            .notification { position: fixed; right: 24px; top: 24px; min-width: 320px; max-width: 420px; padding: 16px 16px 14px 16px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.15); background: #ffffff; color: #1f2937; opacity: 0; transform: translateY(-16px); transition: opacity .25s ease, transform .25s ease; z-index: 100001; border: 1px solid #EEF2F7; }
+            .notification.show { opacity: 1; transform: translateY(0); }
+            .notification .notification-header { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+            .notification .notification-title { font-size: 15px; font-weight: 600; margin: 0; }
+            .notification .notification-message { font-size: 14px; margin: 0; color: #4b5563; }
+            .notification .notification-close { position: absolute; top: 8px; right: 10px; border: none; background: transparent; font-size: 18px; color: #9CA3AF; cursor: pointer; }
+            .notification.success { border-left: 4px solid #22c55e; }
+            .notification.error { border-left: 4px solid #ef4444; }
+            .notification.info { border-left: 4px solid #3b82f6; }
+            `;
+            document.head.appendChild(style);
+        })();
+
+        function showNotification(type, title, message) {
+            const n = document.createElement('div');
+            n.className = `notification ${type}`;
+            n.innerHTML = `
+                <div class="notification-header">
+                    <i class="notification-icon fas fa-${type === 'success' ? 'check-circle' : (type === 'info' ? 'info-circle' : 'exclamation-circle')}"></i>
+                    <h6 class="notification-title">${title}</h6>
+                </div>
+                <p class="notification-message">${message}</p>
+                <button class="notification-close">&times;</button>
+            `;
+            document.body.appendChild(n);
+            setTimeout(() => n.classList.add('show'), 50);
+            const remove = () => { n.classList.remove('show'); setTimeout(() => n.remove(), 300); };
+            setTimeout(remove, 3000);
+            n.querySelector('.notification-close').addEventListener('click', remove);
+        }
+
+        // Backward-compatible helper used in pages
+        function showAlert(message, type = 'error') {
+            const title = type === 'success' ? 'Thành công' : (type === 'info' ? 'Thông báo' : 'Lỗi');
+            showNotification(type, title, message);
+        }
+    </script>
+</head>
+<body>
+
+    
+        <div class="container">
+            <div class="dnu-header">
+                <div class="containers">
+                  <div class="row align-items-center">
+                     <div class="col-md-4">
+                       <img src="/static/images/dnu-logo.svg" alt="Logo DNU" class="dnu-logo">
+                     </div>
+                    <div class="col-md-4 text-center">
+                      <h2 class="mb-1">
+                        Đại học Đại Nam
+                      </h2>
+                      <p class="mb-1 fs-5 fw-semibold">Khoa Công nghệ thông tin</p>
+                      <small class="text-white-50">
+                        <i class="fas fa-file-alt me-1"></i>
+                        Ứng dụng quản lý văn bản kết hợp tìm kiếm nâng cao
+                        <i class="fas fa-search ms-1"></i>
+                      </small>
+                    </div>
+                    <div class="col-md-4 text-end">
+                      <div class="d-flex c-fl flex-column align-items-end">
+                        <div class="header-decoration mb-2">
+                          <i class="fas fa-graduation-cap text-white me-2" style="font-size: 2rem;"></i>
+                          <i class="fas fa-file-alt text-white" style="font-size: 1.5rem;"></i>
+                        </div>
+                        <small class="text-white-50 fw-semibold">Excellence in Education</small>
+                        <small class="text-white-50">Digital Document Management</small>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+        <main>
+            
+
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+</body>
+</html>
