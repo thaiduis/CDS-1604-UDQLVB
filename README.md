@@ -90,7 +90,7 @@ Tạo file `.env` và cấu hình (ví dụ):
 MYSQL_HOST=127.0.0.1
 MYSQL_PORT=3306
 MYSQL_USER=docuser
-MYSQL_PASSWORD=StrongPass123!
+MYSQL_PASSWORD=YOUR-PASSWORD
 MYSQL_DB=docmgr
 UPLOAD_DIR=uploads
 # Nếu dùng OCR ảnh/PDF:
