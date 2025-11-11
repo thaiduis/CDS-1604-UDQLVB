@@ -20,16 +20,15 @@
 
 ## 📖 1. Giới thiệu
 
-Đây là dự án xây dựng một ứng dụng web quản lý tài liệu mạnh mẽ, cho phép người dùng tải lên, lưu trữ, tổ chức và tìm kiếm thông tin trong nhiều loại tài liệu khác nhau (PDF, DOCX, ảnh). Điểm nổi bật của hệ thống là khả năng trích xuất văn bản từ các tài liệu được quét bằng công nghệ Nhận dạng Ký tự Quang học (OCR) và cung cấp các tính năng tìm kiếm nâng cao như tìm kiếm không dấu và tìm kiếm mờ (fuzzy search).
+Hệ thống quản lý tài liệu hỗ trợ tải lên PDF/Ảnh/Word, tự động OCR nội dung, lưu trữ metadata và cho phép tìm kiếm nâng cao tiếng Việt (không dấu, fuzzy, boolean/wildcard). Giao diện web dùng Jinja2, kèm các API trả JSON.
 
 Các chức năng chính:
-- **Quản lý Tài liệu Toàn diện**: Tải lên, xem, xóa, và tải xuống tài liệu.
-- **Tổ chức Linh hoạt**: Tạo và quản lý cấu trúc thư mục lồng nhau để sắp xếp tài liệu.
-- **Trích xuất Nội dung với OCR**: Tự động quét và trích xuất văn bản từ các tệp PDF (dạng ảnh) và hình ảnh (PNG, JPG).
-- **Tìm kiếm Toàn văn (Full-Text Search)**: Tìm kiếm từ khóa trong toàn bộ nội dung đã được OCR.
-- **Tìm kiếm Nâng cao**: Hỗ trợ tìm kiếm không phân biệt dấu và tìm kiếm mờ (fuzzy matching).
-- **Lọc Đa Tiêu chí**: Thu hẹp kết quả tìm kiếm theo danh mục, ngày tạo, loại tệp, và thư mục.
-- **Chia sẻ An toàn**: Tạo liên kết chia sẻ cho tài liệu.
+- 📤 Tải lên tài liệu (PDF/JPG/PNG/DOC/DOCX) và OCR tự động
+- 🗂️ Quản lý metadata: tiêu đề, tags, dung lượng, loại file
+- 🔎 Tìm kiếm nâng cao: không dấu, fuzzy (chịu lỗi), boolean, wildcard; sắp xếp theo mức liên quan
+- 🧭 Phân trang thông minh, tự điều hướng khi vượt trang
+- ⤵️ Tải xuống, 🗑️ xóa tài liệu, ♻️ xử lý lại OCR
+- 🧾 Gợi ý từ khóa, thống kê số lượng và dung lượng lưu trữ
 
 ---
 
@@ -65,11 +64,11 @@ Cấu trúc thư mục chính:
 
 ## 🖼️ 3. Một số hình ảnh hệ thống
 
-- Trang danh sách tài liệu, tìm kiếm nâng cao, phân trang:
+- Trang danh sách tài liệu, tìm kiếm nâng cao, phân trang (tối đa 5 mục/trang)
 
   ![Server GUI](docs/quanly.png)
   
-- Trang chi tiết với tìm kiếm trong nội dung, highlight kết quả:
+- Trang chi tiết với tìm kiếm trong nội dung, highlight không dấu và fuzzy, toast thông báo
 
   ![Server GUI](docs/chitiet.png)
 
@@ -80,31 +79,49 @@ Cấu trúc thư mục chính:
 ### 4.1. Yêu cầu hệ thống
 - Windows/Linux/macOS
 - Python 3.10+
-- MySQL 8.0+ (hoặc PostgreSQL, SQLite)
-- Tesseract OCR Engine (đã thêm vào PATH và cài đặt gói ngôn ngữ `Vietnamese`).
+- MySQL 8.0+
+- Tesseract OCR, Poppler (nếu xử lý PDF scan)
 
 ### 4.2. Cấu hình môi trường
-1.  **Tạo và kích hoạt môi trường ảo:**
-    ```bash
-    python -m venv venv
-    # Trên Windows
-    .\venv\Scripts\activate
-    ```
+Tạo và kích hoạt môi trường, cài thư viện:
+```bash
+python -m venv .venv
+. .venv\Scripts\activate   # Windows
+pip install -r requirements.txt
+```
 
-2.  **Cài đặt các thư viện cần thiết:**
-    ```bash
-    pip install -r requirements.txt
-    ```
+Tạo CSDL MySQL (ví dụ):
+```sql
+CREATE DATABASE docmgr CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+```
 
-3.  **Cấu hình Cơ sở dữ liệu:**
-    - Tạo một CSDL trong MySQL (ví dụ: `doc_management_db`).
-    - Cập nhật chuỗi kết nối trong `app/database.py` với thông tin CSDL của bạn.
+Tạo file `.env` và cấu hình (ví dụ):
+```
+# APP config
+APP_HOST=0.0.0.0
+APP_PORT=8000
+APP_DEBUG=true
+SECRET_KEY=${SECRET_KEY}
+
+# MySQL config
+MYSQL_HOST=127.0.0.1
+MYSQL_PORT=3306
+MYSQL_USER=${MYSQL_USER}
+MYSQL_PASSWORD=${MYSQL_PASSWORD}
+MYSQL_DB=${MYSQL_DB}
+
+# File/Library paths
+UPLOAD_DIR=uploads
+TESSERACT_CMD=${TESSERACT_CMD}
+POPPLER_BIN=${POPPLER_BIN}
+EASYOCR_GPU=true
+```
 
 ### 4.3. Chạy ứng dụng
 ```bash
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
-Mở trình duyệt và truy cập: `http://127.0.0.1:8000`
+Mở trình duyệt: `http://localhost:8000/documents`
 
 ---
 
@@ -116,4 +133,3 @@ Mở trình duyệt và truy cập: `http://127.0.0.1:8000`
 <p align="center">© 2025 Faculty of Information Technology, DaiNam University.</p>
 
 ---
-
