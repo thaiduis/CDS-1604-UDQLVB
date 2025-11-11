@@ -1,0 +1,2184 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% if error %}
+<div class="error-banner">
+    <div class="error-content">
+        <span class="error-icon">⚠️</span>
+        <span class="error-text">{{ error }}</span>
+    </div>
+</div>
+{% endif %}
+<script>
+// Global functions - must be defined before any onclick handlers
+window.toggleUpload = function() {
+    console.log('toggleUpload called');
+    const modal = document.getElementById('uploadModal');
+    console.log('Modal element:', modal);
+    
+    if (!modal) {
+        console.error('Modal not found!');
+        return;
+    }
+    
+    const isVisible = modal.classList.contains('show');
+    
+    if (!isVisible) {
+        modal.classList.add('show');
+        modal.style.zIndex = '99999';
+        console.log('Modal opened with z-index:', modal.style.zIndex);
+    } else {
+        modal.classList.remove('show');
+        console.log('Modal closed');
+    }
+}
+
+window.toggleView = function(view) {
+    // Update active button
+    document.querySelectorAll('[data-view]').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    document.querySelector(`[data-view="${view}"]`).classList.add('active');
+    
+    // Update view (for future grid implementation)
+    const docsList = document.getElementById('documentsList');
+    if (view === 'grid') {
+        docsList.classList.add('documents-grid-view');
+        docsList.classList.remove('documents-list-view');
+    } else {
+        docsList.classList.add('documents-list-view');
+        docsList.classList.remove('documents-grid-view');
+    }
+}
+
+window.toggleSearch = function() {
+    // Scroll to search section
+    document.querySelector('.search-section').scrollIntoView({ 
+        behavior: 'smooth',
+        block: 'start'
+    });
+}
+
+window.submitUpload = function() {
+    console.log('submitUpload called');
+    
+    const form = document.getElementById('uploadForm');
+    const title = document.getElementById('uploadTitle');
+    const tags = document.getElementById('uploadTags');
+    const fileInput = document.getElementById('upload-file');
+    
+    console.log('Form elements:', { form, title, tags, fileInput });
+    
+    if (!title) {
+        showError('Lỗi', 'Không tìm thấy trường tiêu đề');
+        return;
+    }
+    
+    if (!fileInput) {
+        showError('Lỗi', 'Không tìm thấy trường file');
+        return;
+    }
+    
+    // Validate form
+    if (!title.value.trim()) {
+        showError('Lỗi', 'Vui lòng nhập tiêu đề tài liệu');
+        return;
+    }
+    
+    if (!fileInput.files || fileInput.files.length === 0) {
+        showError('Lỗi', 'Vui lòng chọn file');
+        return;
+    }
+    
+    console.log('Form validation passed, creating FormData...');
+    
+    const formData = new FormData();
+    formData.append('title', title.value);
+    formData.append('tags', tags ? tags.value : '');
+    const categorySelect = document.getElementById('uploadCategory');
+    formData.append('category_id', categorySelect ? categorySelect.value : '');
+    const folderSelect = document.getElementById('uploadFolder');
+    formData.append('folder_id', folderSelect ? folderSelect.value : '');
+    formData.append('file', fileInput.files[0]);
+    
+    // Show progress
+    const progressDiv = document.getElementById('uploadProgress');
+    const progressBar = progressDiv ? progressDiv.querySelector('.progress-bar') : null;
+    const uploadBtn = document.querySelector('#uploadModal .btn.btn-primary');
+    const closeBtn = document.querySelector('#uploadModal .close-btn');
+    if (progressDiv) {
+        progressDiv.style.display = 'block';
+    }
+    if (uploadBtn) {
+        uploadBtn.dataset.originalText = uploadBtn.innerHTML;
+        uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Đang tải lên...';
+        uploadBtn.disabled = true;
+    }
+    if (closeBtn) closeBtn.disabled = true;
+    
+    console.log('Submitting form...');
+    
+    // Simulate indeterminate upload progress while awaiting response
+    let pct = 5;
+    let uploadInterval = null;
+    if (progressBar) {
+        progressBar.style.width = '5%';
+        uploadInterval = setInterval(() => {
+            pct = Math.min(pct + 3, 95);
+            progressBar.style.width = pct + '%';
+        }, 200);
+    }
+
+    // Submit form
+    fetch('/documents/upload', {
+        method: 'POST',
+        body: formData
+    })
+    .then(async response => {
+        console.log('Response received:', response);
+        const contentType = response.headers.get('content-type') || '';
+        // If not OK, try to extract message from JSON (if available) or fallback
+        if (!response.ok) {
+            let message = `HTTP ${response.status}`;
+            try {
+                if (contentType.includes('application/json')) {
+                    const data = await response.json();
+                    message = data.detail || data.message || message;
+                } else {
+                    await response.text();
+                }
+            } catch {}
+            throw new Error(message);
+        }
+        // Backend may return HTML TemplateResponse with status 200 on validation errors
+        if (!contentType.includes('application/json')) {
+            throw new Error('Máy chủ trả về phản hồi không hợp lệ (không phải JSON)');
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log('Data received:', data);
+        // Backend returns {"id": doc.id, "message": "Tải lên thành công"}
+        if (data.id && data.message) {
+            if (progressBar) progressBar.style.width = '100%';
+            showSuccess('Thành công', data.message);
+            toggleUpload(); // Close modal
+            setTimeout(() => location.reload(), 1000); // Refresh page
+            // Also refresh sizes immediately in case no full reload
+            refreshStorageSizes();
+        } else {
+            showError('Lỗi', data.message || 'Có lỗi xảy ra khi tải lên');
+        }
+    })
+    .catch(error => {
+        console.error('Upload error:', error);
+        showError('Lỗi', 'Có lỗi xảy ra khi tải lên tài liệu: ' + error.message);
+    })
+    .finally(() => {
+        if (progressDiv) {
+            progressDiv.style.display = 'none';
+        }
+        if (uploadInterval) {
+            clearInterval(uploadInterval);
+            uploadInterval = null;
+        }
+        if (uploadBtn) {
+            uploadBtn.innerHTML = uploadBtn.dataset.originalText || '<i class="fas fa-upload me-2"></i>Tải lên';
+            uploadBtn.disabled = false;
+        }
+        if (closeBtn) closeBtn.disabled = false;
+    });
+}
+
+function showError(title, message) {
+    showNotification('error', title, message);
+}
+
+function showSuccess(title, message) {
+    showNotification('success', title, message);
+}
+</script>
+<!-- Dashboard Welcome -->
+<div class="dashboard-welcome">
+    <div class="d-flex justify-content-between align-items-center">
+        <div>
+            <h2 class="dashboard-title">
+                <i class="fas fa-tachometer-alt text-dnu-primary me-2"></i>
+                Dashboard
+            </h2>
+            <p class="dashboard-subtitle text-muted mb-0">
+                Chào mừng trở lại! Quản lý tài liệu của bạn một cách hiệu quả
+            </p>
+    </div>
+        <div class="dashboard-actions">
+            <button onclick="toggleUpload()" class="btn btn-outline-primary me-2">
+                <i class="fas fa-cloud-upload-alt me-1"></i>
+                Tải lên
+    </button>
+            <a href="/analytics" class="btn btn-outline-primary me-2">
+                <i class="fas fa-chart-line me-1"></i>
+                Analytics
+            </a>
+            <button onclick="toggleAdvancedSearch()" class="btn btn-outline-primary me-2">
+                <i class="fas fa-filter me-1"></i>
+                Tìm kiếm nâng cao
+            </button>
+            <button onclick="toggleSearch()" class="btn btn-primary">
+                <i class="fas fa-search me-1"></i>
+                Tìm kiếm
+    </button>
+        </div>
+    </div>
+</div>
+
+<!-- Stats Cards -->
+<div class="stats-row">
+    <div class="stats-card">
+        <div class="stats-card-body">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <h3 class="stats-number text-primary">{{ total or 0 }}</h3>
+                    <p class="stats-label">Tổng tài liệu</p>
+    </div>
+                <div class="stats-icon bg-primary">
+                    <i class="fas fa-file-alt"></i>
+        </div>
+    </div>
+                </div>
+            </div>
+    <div class="stats-card">
+        <div class="stats-card-body">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <h3 class="stats-number text-success">{{ documents|length if documents else 0 }}</h3>
+                    <p class="stats-label">Hiển thị</p>
+                </div>
+                <div class="stats-icon bg-success">
+                    <i class="fas fa-eye"></i>
+            </div>
+                </div>
+            </div>
+        </div>
+    <div class="stats-card">
+        <div class="stats-card-body">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <h3 class="stats-number text-warning">{{ page or 1 }}</h3>
+                    <p class="stats-label">Trang hiện tại</p>
+            </div>
+                <div class="stats-icon bg-warning">
+                    <i class="fas fa-bookmark"></i>
+                    </div>
+                    </div>
+                    </div>
+                    </div>
+    <div class="stats-card">
+        <div class="stats-card-body">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <h3 class="stats-number text-info">{{ total_pages or 1 }}</h3>
+                    <p class="stats-label">Tổng trang</p>
+                </div>
+                <div class="stats-icon bg-info">
+                    <i class="fas fa-layer-group"></i>
+                </div>
+            </div>
+        </div>
+        </div>
+</div>
+
+<!-- Main Content Area -->
+<div class="main-content">
+    <!-- Left Column -->
+    <div class="left-column">
+        <!-- Search & Filter Section -->
+        <div class="search-section">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title mb-3">
+                        <i class="fas fa-search text-dnu-primary me-2"></i>
+                        Tìm kiếm nâng cao
+                    </h5>
+                    <form method="get" action="/documents/" class="search-form">
+                        <div class="form-group">
+                            <label class="form-label">Từ khóa</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                <input type="text" class="form-control" name="q" placeholder="Tìm kiếm trong tiêu đề, nội dung..." value="{{ q }}">
+    </div>
+            </div>
+                        <div class="form-group">
+                            <label class="form-label">Tiêu đề</label>
+                            <input type="text" class="form-control" name="title" placeholder="Tiêu đề..." value="{{ title }}">
+    </div>
+            <div class="form-group">
+                            <label class="form-label">Tags</label>
+                            <input type="text" class="form-control" name="tags" placeholder="Tags..." value="{{ tags }}">
+            </div>
+                <div class="form-group">
+                    <label class="form-label">Danh mục</label>
+                    <select class="form-select" name="category_id" id="categorySelect" onchange="autoSearch()">
+                        <option value="">Tất cả danh mục</option>
+                        {% for category in categories %}
+                        <option value="{{ category.id }}" {% if category_id == category.id|string %}selected{% endif %} style="color: {{ category.color or '#333' }}">
+                            {{ category.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Thư mục</label>
+                    <select class="form-select" name="folder_id" id="folderSelect" onchange="autoSearch()">
+                        <option value="">Tất cả thư mục</option>
+                        {% for folder in folders %}
+                        <option value="{{ folder.id }}" {% if folder_id == folder.id|string %}selected{% endif %} style="color: {{ folder.color or '#333' }}">
+                            {{ folder.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            <div class="form-group">
+                            <label class="form-label">Loại</label>
+                            <select class="form-select" name="type" onchange="autoSearch()">
+                                <option value="">Tất cả</option>
+                                <option value="pdf" {% if type == 'pdf' %}selected{% endif %}>PDF</option>
+                                <option value="image" {% if type == 'image' %}selected{% endif %}>Hình ảnh</option>
+                                <option value="word" {% if type == 'word' %}selected{% endif %}>Word</option>
+                            </select>
+                </div>
+                        <div class="form-group">
+                            <label class="form-label">&nbsp;</label>
+                            <div class="d-flex gap-2">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-search me-1"></i>Tìm kiếm
+                                </button>
+                                {% if q or title or tags or (category_id and category_id != '') or (folder_id and folder_id != '') or type %}
+                                <a href="/documents/" class="btn btn-outline-secondary">
+                                    <i class="fas fa-times me-1"></i>Xóa bộ lọc
+                                </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Documents List -->
+        <div class="documents-section">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-folder-open text-dnu-primary me-2"></i>
+                        Tài liệu của tôi
+                    </h5>
+        <div class="view-controls">
+                        <button type="button" class="view-btn active" data-view="list">
+                            <i class="fas fa-list"></i>
+            </button>
+                        <button type="button" class="view-btn" data-view="grid">
+                            <i class="fas fa-th"></i>
+            </button>
+            </div>
+        </div>
+                <div class="card-body">
+    {% if documents %}
+                        <div class="documents-info mb-3">
+                            <small class="text-muted">
+                                Hiển thị {{ documents|length }}/{{ total or 0 }} tài liệu
+                                {% if q or title or tags or (category_id and category_id != '') or (folder_id and folder_id != '') or type %}• Kết quả tìm kiếm{% endif %}
+                            </small>
+        </div>
+        
+        <!-- Bulk Actions Bar -->
+        <div id="bulkActionsBar" class="bulk-actions-bar" style="display: none; background: #e3f2fd; padding: 10px; margin: 10px 0; border-radius: 5px; border-left: 4px solid #2196f3;">
+            <div class="d-flex align-items-center justify-content-between">
+                <div>
+                    <strong id="bulkSelectionCount">0</strong> tài liệu được chọn
+                </div>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-sm btn-outline-primary" onclick="bulkMoveToFolder()">
+                        <i class="fas fa-folder me-1"></i>Di chuyển
+                    </button>
+                    <button class="btn btn-sm btn-outline-success" onclick="bulkAssignCategory()">
+                        <i class="fas fa-tag me-1"></i>Gán danh mục
+                    </button>
+                    <button class="btn btn-sm btn-outline-info" onclick="bulkAddTags()">
+                        <i class="fas fa-plus me-1"></i>Thêm tags
+                    </button>
+                    <button class="btn btn-sm btn-outline-warning" onclick="bulkExport()">
+                        <i class="fas fa-download me-1"></i>Xuất
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="bulkDelete()">
+                        <i class="fas fa-trash me-1"></i>Xóa
+                    </button>
+                    <button class="btn btn-sm btn-secondary" onclick="clearSelection()">
+                        <i class="fas fa-times me-1"></i>Bỏ chọn
+                    </button>
+                </div>
+            </div>
+        </div>
+
+                        <div id="documentsList" class="documents-list-view">
+            {% for d in documents %}
+                            <div class="document-item">
+                                <div class="document-row">
+                                    <div class="document-icon">
+                        {% if d.mime_type %}
+                            {% if 'pdf' in d.mime_type %}
+                                                <i class="fas fa-file-pdf text-danger"></i>
+                            {% elif 'image' in d.mime_type %}
+                                                <i class="fas fa-file-image text-success"></i>
+                            {% else %}
+                                                <i class="fas fa-file-word text-primary"></i>
+                            {% endif %}
+                        {% else %}
+                                            <i class="fas fa-file-alt text-dnu-primary"></i>
+                        {% endif %}
+                        </div>
+                                    <div class="document-content">
+                                        <h6 class="document-title mb-1">
+                                            <a href="/documents/{{ d.id }}?q={{ q | urlencode }}">
+                        {{ d.title | highlight(q or title) }}
+                    </a>
+                                        </h6>
+                                        <p class="document-description text-muted mb-1">
+                    {% if d.tags %}
+                                                Tags: {{ d.tags | highlight(tags) }}
+                            {% else %}
+                                                Không có mô tả
+                            {% endif %}
+                                        </p>
+                                        <div class="document-meta">
+                                            <small class="text-muted">
+                                                <i class="fas fa-calendar me-1"></i>
+                                                {{ d.created_at.strftime('%d/%m/%Y') }}
+                                                <span class="ms-3">
+                                                    <i class="fas fa-file me-1"></i>
+                        {% if d.filesize %}
+                                                        {{ '{:.1f}'.format(d.filesize / 1024 / 1024) }}MB
+                        {% endif %}
+                                                </span>
+                                                {% if d.category %}
+                                                <span class="ms-3">
+                                                    <i class="fas fa-tag me-1" style="color: {{ d.category.color or '#6c757d' }}"></i>
+                                                    <span style="color: {{ d.category.color or '#6c757d' }}">{{ d.category.name }}</span>
+                                                </span>
+                                                {% endif %}
+                                                {% if d.folder %}
+                                                <span class="ms-3">
+                                                    <i class="fas fa-folder me-1" style="color: {{ d.folder.color or '#6c757d' }}"></i>
+                                                    <span style="color: {{ d.folder.color or '#6c757d' }}">{{ d.folder.name }}</span>
+                                                </span>
+                                                {% endif %}
+                                            </small>
+                    </div>
+                </div>
+                                    <div class="document-actions">
+                                        <input type="checkbox" class="document-checkbox me-2" value="{{ d.id }}" onchange="updateBulkActions()">
+                                        <button class="action-btn favorite" title="Yêu thích" onclick="toggleFavorite({{ d.id }})" data-doc-id="{{ d.id }}">
+                                            <i class="far fa-heart"></i>
+                                        </button>
+                                        <button class="action-btn share" title="Chia sẻ" onclick="shareDocument({{ d.id }})" data-doc-id="{{ d.id }}">
+                                            <i class="fas fa-share-alt"></i>
+                                        </button>
+                                        <a href="/documents/{{ d.id }}?q={{ q | urlencode }}" class="action-btn view" title="Xem" data-doc-id="{{ d.id }}">
+                                            <i class="fas fa-eye"></i>
+                                        </a>
+                                        <a href="/documents/{{ d.id }}/download" class="action-btn download" title="Tải xuống">
+                                            <i class="fas fa-download"></i>
+                                        </a>
+                                        <button onclick="deleteDoc({{ d.id }})" class="action-btn delete" title="Xóa">
+                                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- Pagination -->
+                        {% if total_pages > 1 %}
+        <div class="pagination">
+            {% if page > 1 %}
+                                <a href="?page={{ page - 1 }}&q={{ q | urlencode }}&title={{ title | urlencode }}&tags={{ tags | urlencode }}&type={{ type | urlencode }}" class="pagination-btn prev">
+                                    <i class="fas fa-chevron-left"></i>
+                                </a>
+            {% endif %}
+            
+            {% for p in range(max(1, page - 2), min(total_pages + 1, page + 3)) %}
+                                <a href="?page={{ p }}&q={{ q | urlencode }}&title={{ title | urlencode }}&tags={{ tags | urlencode }}&type={{ type | urlencode }}" 
+                                   class="pagination-btn {% if p == page %}active{% endif %}">
+                    {{ p }}
+                                </a>
+            {% endfor %}
+
+            {% if page < total_pages %}
+                                <a href="?page={{ page + 1 }}&q={{ q | urlencode }}&title={{ title | urlencode }}&tags={{ tags | urlencode }}&type={{ type | urlencode }}" class="pagination-btn next">
+                                    <i class="fas fa-chevron-right"></i>
+                                </a>
+            {% endif %}
+        </div>
+                        {% endif %}
+    {% else %}
+        <div class="empty-state">
+            {% if q or title or tags %}
+                                <div class="empty-icon">
+                                    <i class="fas fa-search"></i>
+                                </div>
+                                <h5>Không tìm thấy tài liệu</h5>
+                                <p>Không có tài liệu nào phù hợp với tiêu chí tìm kiếm.</p>
+                                <a href="/documents/" class="btn btn-primary">Xóa bộ lọc</a>
+            {% else %}
+                                <div class="empty-icon">
+                                    <i class="fas fa-folder-open"></i>
+                                </div>
+                                <h5>Chưa có tài liệu nào</h5>
+                                <p>Bắt đầu bằng cách tải lên tài liệu đầu tiên của bạn</p>
+                                <button onclick="toggleUpload()" class="btn btn-primary">
+                                    <i class="fas fa-plus me-2"></i>
+                                    Tải lên tài liệu
+                                </button>
+            {% endif %}
+        </div>
+    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Column -->
+    <div class="sidebar">
+        <!-- Quick Actions -->
+        <div class="quick-actions">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="card-title mb-0">
+                        <i class="fas fa-bolt text-warning me-2"></i>
+                        Thao tác nhanh
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <a href="#" class="quick-action-item" onclick="toggleUpload()">
+                        <div class="quick-action-icon bg-primary">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                        </div>
+                        <div class="quick-action-content">
+                            <h6>Tải lên file</h6>
+                            <small class="text-muted">Upload PDF, Word, Image</small>
+                        </div>
+                    </a>
+                    <a href="#" class="quick-action-item" onclick="toggleSearch()">
+                        <div class="quick-action-icon bg-info">
+                            <i class="fas fa-search"></i>
+                        </div>
+                        <div class="quick-action-content">
+                            <h6>Tìm kiếm</h6>
+                            <small class="text-muted">Khám phá tài liệu</small>
+                        </div>
+                    </a>
+                    <a href="/documents/" class="quick-action-item">
+                        <div class="quick-action-icon bg-success">
+                            <i class="fas fa-list"></i>
+                        </div>
+                        <div class="quick-action-content">
+                            <h6>Xem tất cả</h6>
+                            <small class="text-muted">Danh sách đầy đủ</small>
+                        </div>
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Activity -->
+        <div class="card">
+            <div class="card-header">
+                <h6 class="card-title mb-0">
+                    <i class="fas fa-history text-info me-2"></i>
+                    Hoạt động gần đây
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="activity-list">
+                    <div class="activity-item">
+                        <div class="activity-icon bg-primary">
+                            <i class="fas fa-plus"></i>
+                        </div>
+                        <div class="activity-content">
+                            <p class="mb-1">Bạn đã truy cập hệ thống</p>
+                            <small class="text-muted">Vừa xong</small>
+                        </div>
+                    </div>
+                    {% if documents %}
+                    <div class="activity-item">
+                        <div class="activity-icon bg-success">
+                            <i class="fas fa-file-alt"></i>
+                        </div>
+                        <div class="activity-content">
+                            <p class="mb-1">Có {{ documents|length }} tài liệu</p>
+                            <small class="text-muted">Trong hệ thống</small>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Storage Info -->
+        <div class="card">
+            <div class="card-header">
+                <h6 class="card-title mb-0">
+                    <i class="fas fa-hdd text-secondary me-2"></i>
+                    Dung lượng lưu trữ
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="storage-info">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>Đã sử dụng</span>
+                        <span class="text-muted"><span id="totalSize">0.0</span> MB / 1 GB</span>
+                    </div>
+                    <div class="progress mb-3">
+                        <div class="progress-bar bg-dnu-primary" id="totalBar" style="width: 0%"></div>
+                    </div>
+                    <div class="storage-details">
+                        <div class="d-flex justify-content-between mb-1">
+                            <small class="text-muted">
+                                <i class="fas fa-file-pdf text-danger me-1"></i>PDF
+                            </small>
+                            <small class="text-muted"><span id="pdfSize">0.0</span> MB</small>
+                        </div>
+                        <div class="d-flex justify-content-between mb-1">
+                            <small class="text-muted">
+                                <i class="fas fa-file-word text-primary me-1"></i>Word
+                            </small>
+                            <small class="text-muted"><span id="wordSize">0.0</span> MB</small>
+                        </div>
+                        <div class="d-flex justify-content-between">
+                            <small class="text-muted">
+                                <i class="fas fa-file-image text-success me-1"></i>Images
+                            </small>
+                            <small class="text-muted"><span id="imageSize">0.0</span> MB</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Upload Modal -->
+<div id="uploadModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h5 class="modal-title">
+                <i class="fas fa-cloud-upload-alt text-primary me-2"></i>
+                Tải lên tài liệu
+            </h5>
+            <button type="button" class="close-btn" onclick="toggleUpload()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="uploadForm" method="post" action="/documents/upload" enctype="multipart/form-data">
+                <div class="form-group mb-3">
+                    <label class="form-label">Tiêu đề tài liệu *</label>
+                    <input type="text" class="form-control" name="title" id="uploadTitle" required>
+                </div>
+                <div class="form-group mb-3">
+                    <label class="form-label">Tags (tùy chọn)</label>
+                    <input type="text" class="form-control" name="tags" id="uploadTags" placeholder="Ví dụ: học tập, nghiên cứu">
+                </div>
+                <div class="form-group mb-3">
+                    <label class="form-label">Danh mục</label>
+                    <select class="form-control" name="category_id" id="uploadCategory">
+                        <option value="">-- Chọn danh mục --</option>
+                        {% for category in categories %}
+                        <option value="{{ category.id }}" style="color: {{ category.color or '#333' }}">
+                            {{ category.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group mb-3">
+                    <label class="form-label">Thư mục</label>
+                    <select class="form-control" name="folder_id" id="uploadFolder">
+                        <option value="">-- Chọn thư mục --</option>
+                        {% for folder in folders %}
+                        <option value="{{ folder.id }}" style="color: {{ folder.color or '#333' }}">
+                            {{ folder.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group mb-3">
+                    <label class="form-label">Chọn file *</label>
+                    <div class="file-upload-area" id="fileUploadArea">
+                        <div class="upload-content">
+                            <i class="fas fa-cloud-upload-alt text-primary mb-3" style="font-size: 3rem;"></i>
+                            <h5>Kéo thả file vào đây</h5>
+                            <p class="text-muted mb-3">hoặc click để chọn file</p>
+                            <button type="button" class="btn btn-outline-primary" onclick="document.getElementById('upload-file').click()">
+                                <i class="fas fa-folder-open me-2"></i>
+                                Chọn file
+                            </button>
+                        </div>
+                        <input type="file" id="upload-file" name="file" required
+                               accept="application/pdf,image/jpeg,image/png,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword"
+                               class="file-input" style="position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0;">
+                    </div>
+                    <div class="upload-info mt-3">
+                        <small class="text-muted">
+                            Hỗ trợ: PDF, Word (.doc, .docx), Images (.jpg, .png)<br>
+                            Kích thước tối đa: 10MB mỗi file
+                        </small>
+                    </div>
+                </div>
+                <div id="uploadProgress" class="mt-3" style="display: none;">
+                    <div class="progress">
+                        <div class="progress-bar" style="width: 0%"></div>
+                    </div>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="toggleUpload()">Hủy</button>
+            <button type="button" class="btn btn-primary" onclick="submitUpload()">
+                <i class="fas fa-upload me-2"></i>
+                Tải lên
+            </button>
+        </div>
+    </div>
+</div>
+
+<style>
+/* Modal Styles */
+.modal {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    background: rgba(0, 0, 0, 0.5) !important;
+    z-index: 99999 !important;
+    display: none !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+.modal.show {
+    display: flex !important;
+}
+
+.modal-content {
+    background: var(--dnu-white);
+    border-radius: var(--dnu-radius-lg);
+    box-shadow: var(--dnu-shadow-xl);
+    max-width: 600px;
+    width: 90%;
+    max-height: 90vh;
+    overflow-y: auto;
+    position: relative;
+    z-index: 100000 !important;
+}
+
+.modal-header {
+    padding: 1.5rem;
+    border-bottom: 2px solid var(--dnu-light);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-title {
+    color: var(--dnu-primary);
+    font-weight: 600;
+    margin: 0;
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    color: var(--dnu-text-light);
+    cursor: pointer;
+    position: relative;
+    z-index: 100001 !important;
+    padding: 0.5rem;
+    border-radius: 50%;
+    transition: all 0.3s ease;
+}
+
+.close-btn:hover {
+    background: rgba(0, 0, 0, 0.1);
+    color: var(--dnu-primary);
+}
+
+.modal-body {
+    padding: 1.5rem;
+}
+
+.modal-footer {
+    padding: 1.5rem;
+    border-top: 2px solid var(--dnu-light);
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+}
+
+/* Toast-like Notification Styles */
+.notification {
+    position: fixed;
+    right: 24px;
+    top: 24px;
+    min-width: 320px;
+    max-width: 420px;
+    padding: 16px 16px 14px 16px;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+    background: #ffffff;
+    color: #1f2937;
+    opacity: 0;
+    transform: translateY(-16px);
+    transition: opacity 0.25s ease, transform 0.25s ease;
+    z-index: 100001;
+    border: 1px solid #EEF2F7;
+}
+
+.notification.show {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.notification .notification-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.notification .notification-title {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0;
+}
+
+.notification .notification-message {
+    font-size: 14px;
+    margin: 0;
+    color: #4b5563;
+}
+
+.notification .notification-close {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    border: none;
+    background: transparent;
+    font-size: 18px;
+    color: #9CA3AF;
+    cursor: pointer;
+}
+
+.notification.success { border-left: 4px solid #22c55e; }
+.notification.error { border-left: 4px solid #ef4444; }
+
+.notification.success .notification-icon { color: #22c55e; }
+.notification.error .notification-icon { color: #ef4444; }
+
+.file-upload-area {
+    border: 2px dashed var(--dnu-primary);
+    border-radius: var(--dnu-radius-lg);
+    padding: 2rem;
+    text-align: center;
+    background: var(--dnu-light);
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.file-upload-area:hover {
+    background: var(--dnu-white);
+    border-color: var(--dnu-dark);
+}
+
+.file-upload-area.dragover {
+    background: var(--dnu-primary);
+    color: white;
+}
+
+.input-group {
+    display: flex;
+}
+
+.input-group-text {
+    background: var(--dnu-light);
+    border: 2px solid #E0E0E0;
+    border-right: none;
+    color: var(--dnu-primary);
+    padding: 0.75rem 1rem;
+    border-radius: var(--dnu-radius) 0 0 var(--dnu-radius);
+}
+
+.input-group .form-control {
+    border-radius: 0 var(--dnu-radius) var(--dnu-radius) 0;
+    border-left: none;
+}
+
+/* Search Form Button Styles */
+.d-flex.gap-2 {
+    display: flex !important;
+    gap: 0.5rem !important;
+    align-items: center !important;
+    flex-wrap: nowrap !important;
+}
+
+.d-flex.gap-2 .btn {
+    flex: 0 0 auto !important;
+    white-space: nowrap !important;
+    min-width: auto !important;
+    padding: 0.5rem 1rem !important;
+    font-size: 0.875rem !important;
+    line-height: 1.5 !important;
+    border-radius: 0.375rem !important;
+    text-decoration: none !important;
+    display: inline-block !important;
+    text-align: center !important;
+    vertical-align: middle !important;
+    cursor: pointer !important;
+    border: 1px solid transparent !important;
+    transition: all 0.15s ease-in-out !important;
+}
+
+.d-flex.gap-2 .btn-primary {
+    background-color: var(--dnu-primary) !important;
+    border-color: var(--dnu-primary) !important;
+    color: white !important;
+}
+
+.d-flex.gap-2 .btn-primary:hover {
+    background-color: #0056b3 !important;
+    border-color: #0056b3 !important;
+}
+
+.d-flex.gap-2 .btn-outline-secondary {
+    border-color: #6c757d !important;
+    color: #6c757d !important;
+    background-color: transparent !important;
+}
+
+.d-flex.gap-2 .btn-outline-secondary:hover {
+    background-color: #6c757d !important;
+    color: white !important;
+    border-color: #6c757d !important;
+}
+
+/* Auto Search Styles */
+.form-select:focus {
+    border-color: var(--dnu-primary) !important;
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25) !important;
+}
+
+.form-select {
+    transition: all 0.15s ease-in-out !important;
+}
+
+.form-select:hover {
+    border-color: #adb5bd !important;
+}
+
+/* Loading state for auto search */
+.btn:disabled {
+    opacity: 0.6 !important;
+    cursor: not-allowed !important;
+}
+
+/* Responsive Modal */
+@media (max-width: 768px) {
+    .modal-content {
+        width: 95%;
+        margin: 1rem;
+    }
+    
+    .modal-header,
+    .modal-body,
+    .modal-footer {
+        padding: 1rem;
+    }
+    
+    .file-upload-area {
+        padding: 1.5rem 1rem;
+    }
+    
+    .d-flex.gap-2 {
+        flex-direction: column !important;
+        gap: 0.5rem !important;
+    }
+    
+    .d-flex.gap-2 .btn {
+        width: 100% !important;
+    }
+}
+
+/* Favorite button styles */
+.action-btn.favorite {
+    background-color: #f8f9fa;
+    color: #6c757d;
+    border: 1px solid #dee2e6;
+}
+
+.action-btn.favorite:hover {
+    background-color: #e9ecef;
+    color: #495057;
+}
+
+.action-btn.favorite.favorited {
+    background-color: #dc3545;
+    color: white;
+}
+
+.action-btn.favorite.favorited:hover {
+    background-color: #c82333;
+}
+
+/* Share button styles */
+.action-btn.share {
+    background-color: #f8f9fa;
+    color: #6c757d;
+    border: 1px solid #dee2e6;
+}
+
+.action-btn.share:hover {
+    background-color: #e9ecef;
+    color: #495057;
+}
+
+/* Force show modal */
+.force-show {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    z-index: 99999 !important;
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    background: rgba(0,0,0,0.5) !important;
+}
+
+/* Advanced search modal */
+#advancedSearchModal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    z-index: 99999;
+}
+
+#advancedSearchModal.show {
+    display: block !important;
+}
+</style>
+
+<script>
+// Favorites functionality
+window.toggleFavorite = function(docId) {
+    let favorites = JSON.parse(localStorage.getItem('favorites') || '[]');
+    const button = document.querySelector(`[data-doc-id="${docId}"]`);
+    const icon = button.querySelector('i');
+    
+    if (favorites.includes(docId)) {
+        // Remove from favorites
+        favorites = favorites.filter(id => id !== docId);
+        button.classList.remove('favorited');
+        icon.classList.remove('fas');
+        icon.classList.add('far');
+    } else {
+        // Add to favorites
+        favorites.push(docId);
+        button.classList.add('favorited');
+        icon.classList.remove('far');
+        icon.classList.add('fas');
+    }
+    
+    localStorage.setItem('favorites', JSON.stringify(favorites));
+    
+    // Show notification
+    showNotification(
+        favorites.includes(docId) ? 'success' : 'info',
+        favorites.includes(docId) ? 'Thành công' : 'Thông tin',
+        favorites.includes(docId) ? 'Đã thêm vào yêu thích' : 'Đã xóa khỏi yêu thích'
+    );
+}
+
+// Initialize favorite buttons on page load
+window.initializeFavorites = function() {
+    const favorites = JSON.parse(localStorage.getItem('favorites') || '[]');
+    const favoriteButtons = document.querySelectorAll('.action-btn.favorite');
+    
+    favoriteButtons.forEach(button => {
+        const docId = parseInt(button.getAttribute('data-doc-id'));
+        const icon = button.querySelector('i');
+        
+        if (favorites.includes(docId)) {
+            button.classList.add('favorited');
+            icon.classList.remove('far');
+            icon.classList.add('fas');
+        } else {
+            button.classList.remove('favorited');
+            icon.classList.remove('fas');
+            icon.classList.add('far');
+        }
+    });
+}
+
+// Share functionality
+window.shareDocument = async function(docId) {
+    try {
+        console.log('Creating share link for document:', docId);
+        
+        // Tạo share link
+        const response = await fetch(`/api/share/${docId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({})
+        });
+        
+        console.log('Share response status:', response.status);
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Share API error:', errorText);
+            throw new Error(`Không thể tạo link chia sẻ: ${response.status} - ${errorText}`);
+        }
+        
+        const shareData = await response.json();
+        console.log('Share data received:', shareData);
+        
+        const shareUrl = `${window.location.origin}/api/share/${shareData.token}`;
+        console.log('Generated share URL:', shareUrl);
+        
+        // Hiển thị modal chia sẻ
+        showShareModal(shareUrl, docId);
+        
+    } catch (error) {
+        console.error('Error creating share link:', error);
+        // Hiển thị thông báo lỗi chi tiết hơn
+        let errorMessage = 'Lỗi khi tạo link chia sẻ';
+        if (error.message) {
+            errorMessage += ': ' + error.message;
+        }
+        showNotification('error', 'Lỗi', errorMessage);
+    }
+}
+
+window.showShareModal = function(shareUrl, docId) {
+    // Tạo modal chia sẻ đơn giản
+    const modalHtml = `
+        <div id="shareModal" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999; display: flex; align-items: center; justify-content: center;">
+            <div style="background: white; border-radius: 8px; padding: 20px; max-width: 500px; width: 90%; max-height: 80vh; overflow-y: auto;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h5 style="margin: 0;">Chia sẻ tài liệu</h5>
+                    <button type="button" onclick="closeShareModal()" style="background: none; border: none; font-size: 20px; cursor: pointer;">&times;</button>
+                </div>
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: bold;">Link chia sẻ:</label>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="text" id="shareUrl" value="${shareUrl}" readonly style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        <button type="button" onclick="copyShareUrl()" style="padding: 8px 15px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                            <i class="fas fa-copy"></i> Copy
+                        </button>
+                    </div>
+                </div>
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; margin-bottom: 10px; font-weight: bold;">Chia sẻ qua:</label>
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                        <button onclick="shareViaEmail('${shareUrl}')" style="padding: 8px 15px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                            <i class="fas fa-envelope"></i> Email
+                        </button>
+                        <button onclick="shareViaWhatsApp('${shareUrl}')" style="padding: 8px 15px; background: #25d366; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                            <i class="fab fa-whatsapp"></i> WhatsApp
+                        </button>
+                        <button onclick="shareViaTelegram('${shareUrl}')" style="padding: 8px 15px; background: #0088cc; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                            <i class="fab fa-telegram"></i> Telegram
+                        </button>
+                    </div>
+                </div>
+                <div style="background: #d1ecf1; padding: 10px; border-radius: 4px; margin-bottom: 20px;">
+                    <i class="fas fa-info-circle"></i>
+                    Link này sẽ cho phép người khác xem và tải xuống tài liệu mà không cần đăng nhập.
+                </div>
+                <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                    <button type="button" onclick="closeShareModal()" style="padding: 8px 15px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer;">Đóng</button>
+                    <button type="button" onclick="revokeShareLink(${docId})" style="padding: 8px 15px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                        <i class="fas fa-ban"></i> Thu hồi link
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Xóa modal cũ nếu có
+    const existingModal = document.getElementById('shareModal');
+    if (existingModal) {
+        existingModal.remove();
+    }
+    
+    // Thêm modal mới
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+window.closeShareModal = function() {
+    const modal = document.getElementById('shareModal');
+    if (modal) {
+        modal.remove();
+    }
+}
+
+window.copyShareUrl = function() {
+    const shareUrlInput = document.getElementById('shareUrl');
+    shareUrlInput.select();
+    shareUrlInput.setSelectionRange(0, 99999); // For mobile devices
+    document.execCommand('copy');
+    showNotification('success', 'Thành công', 'Đã copy link vào clipboard!');
+}
+
+window.shareViaEmail = function(shareUrl) {
+    const subject = encodeURIComponent('Chia sẻ tài liệu');
+    const body = encodeURIComponent(`Tôi muốn chia sẻ tài liệu này với bạn:\n\n${shareUrl}`);
+    window.open(`mailto:?subject=${subject}&body=${body}`);
+}
+
+window.shareViaWhatsApp = function(shareUrl) {
+    const text = encodeURIComponent(`Chia sẻ tài liệu: ${shareUrl}`);
+    window.open(`https://wa.me/?text=${text}`);
+}
+
+window.shareViaTelegram = function(shareUrl) {
+    const text = encodeURIComponent(`Chia sẻ tài liệu: ${shareUrl}`);
+    window.open(`https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${text}`);
+}
+
+window.revokeShareLink = async function(docId) {
+    try {
+        // Lấy danh sách share links của tài liệu
+        const response = await fetch(`/api/share/document/${docId}/links`);
+        if (!response.ok) {
+            throw new Error('Không thể lấy danh sách share links');
+        }
+        
+        const shareLinks = await response.json();
+        
+        // Thu hồi tất cả share links
+        for (const link of shareLinks) {
+            await fetch(`/api/share/${link.token}`, {
+                method: 'DELETE'
+            });
+        }
+        
+        showNotification('success', 'Thành công', 'Đã thu hồi tất cả link chia sẻ');
+        
+        // Đóng modal
+        closeShareModal();
+        
+    } catch (error) {
+        console.error('Error revoking share links:', error);
+        showNotification('error', 'Lỗi', 'Lỗi khi thu hồi link chia sẻ: ' + error.message);
+    }
+}
+
+// Bulk Operations functionality
+window.updateBulkActions = function() {
+    const checkboxes = document.querySelectorAll('.document-checkbox:checked');
+    const bulkBar = document.getElementById('bulkActionsBar');
+    const countElement = document.getElementById('bulkSelectionCount');
+    
+    if (checkboxes.length > 0) {
+        bulkBar.style.display = 'block';
+        countElement.textContent = checkboxes.length;
+    } else {
+        bulkBar.style.display = 'none';
+    }
+}
+
+window.getSelectedDocumentIds = function() {
+    const checkboxes = document.querySelectorAll('.document-checkbox:checked');
+    return Array.from(checkboxes).map(cb => parseInt(cb.value));
+}
+
+window.clearSelection = function() {
+    const checkboxes = document.querySelectorAll('.document-checkbox');
+    checkboxes.forEach(cb => cb.checked = false);
+    updateBulkActions();
+}
+
+window.bulkMoveToFolder = async function() {
+    const selectedIds = getSelectedDocumentIds();
+    if (selectedIds.length === 0) return;
+    
+    const folderId = prompt('Nhập ID thư mục (để trống để di chuyển ra ngoài):');
+    if (folderId === null) return;
+    
+    try {
+        const response = await fetch('/api/bulk/move-to-folder', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                document_ids: selectedIds,
+                folder_id: folderId ? parseInt(folderId) : null
+            })
+        });
+        
+        const result = await response.json();
+        if (response.ok) {
+            showNotification('success', 'Thành công', result.message);
+            clearSelection();
+            location.reload();
+        } else {
+            showNotification('error', 'Lỗi', result.detail);
+        }
+    } catch (error) {
+        showNotification('error', 'Lỗi', 'Không thể di chuyển tài liệu');
+    }
+}
+
+window.bulkAssignCategory = async function() {
+    const selectedIds = getSelectedDocumentIds();
+    if (selectedIds.length === 0) return;
+    
+    const categoryId = prompt('Nhập ID danh mục:');
+    if (!categoryId) return;
+    
+    try {
+        const response = await fetch('/api/bulk/assign-category', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                document_ids: selectedIds,
+                category_id: parseInt(categoryId)
+            })
+        });
+        
+        const result = await response.json();
+        if (response.ok) {
+            showNotification('success', 'Thành công', result.message);
+            clearSelection();
+            location.reload();
+        } else {
+            showNotification('error', 'Lỗi', result.detail);
+        }
+    } catch (error) {
+        showNotification('error', 'Lỗi', 'Không thể gán danh mục');
+    }
+}
+
+window.bulkAddTags = async function() {
+    const selectedIds = getSelectedDocumentIds();
+    if (selectedIds.length === 0) return;
+    
+    const tags = prompt('Nhập tags (cách nhau bằng dấu phẩy):');
+    if (!tags) return;
+    
+    try {
+        const response = await fetch('/api/bulk/add-tags', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                document_ids: selectedIds,
+                tags: tags
+            })
+        });
+        
+        const result = await response.json();
+        if (response.ok) {
+            showNotification('success', 'Thành công', result.message);
+            clearSelection();
+            location.reload();
+        } else {
+            showNotification('error', 'Lỗi', result.detail);
+        }
+    } catch (error) {
+        showNotification('error', 'Lỗi', 'Không thể thêm tags');
+    }
+}
+
+window.bulkExport = async function() {
+    const selectedIds = getSelectedDocumentIds();
+    if (selectedIds.length === 0) return;
+    
+    const format = prompt('Chọn định dạng xuất (json/csv):', 'json');
+    if (!format) return;
+    
+    try {
+        const response = await fetch('/api/bulk/export-selected', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                document_ids: selectedIds,
+                format: format
+            })
+        });
+        
+        const result = await response.json();
+        if (response.ok) {
+            // Tạo file download
+            const blob = new Blob([format === 'json' ? JSON.stringify(result.data, null, 2) : result.data], {
+                type: format === 'json' ? 'application/json' : 'text/csv'
+            });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `documents_export.${format}`;
+            a.click();
+            window.URL.revokeObjectURL(url);
+            
+            showNotification('success', 'Thành công', `Đã xuất ${result.count} tài liệu`);
+        } else {
+            showNotification('error', 'Lỗi', result.detail);
+        }
+    } catch (error) {
+        showNotification('error', 'Lỗi', 'Không thể xuất tài liệu');
+    }
+}
+
+window.bulkDelete = async function() {
+    const selectedIds = getSelectedDocumentIds();
+    if (selectedIds.length === 0) return;
+    
+    if (!confirm(`Bạn có chắc muốn xóa ${selectedIds.length} tài liệu?`)) return;
+    
+    try {
+        const response = await fetch('/api/bulk/delete', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                document_ids: selectedIds
+            })
+        });
+        
+        const result = await response.json();
+        if (response.ok) {
+            showNotification('success', 'Thành công', result.message);
+            clearSelection();
+            location.reload();
+        } else {
+            showNotification('error', 'Lỗi', result.detail);
+        }
+    } catch (error) {
+        showNotification('error', 'Lỗi', 'Không thể xóa tài liệu');
+    }
+}
+
+// Dashboard functionality
+document.addEventListener('DOMContentLoaded', function() {
+    
+    
+    // Initialize favorites
+    initializeFavorites();
+    
+    // Thêm event listener cho nút đóng modal
+    const closeButtons = document.querySelectorAll('[onclick*="closeAdvancedSearch"]');
+    closeButtons.forEach(button => {
+        button.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            closeAdvancedSearch();
+        });
+    });
+    
+    
+    // View toggle
+    document.querySelectorAll('[data-view]').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const view = this.dataset.view;
+            toggleView(view);
+        });
+    });
+
+    // Upload zone
+    const uploadZone = document.getElementById('fileUploadArea');
+    const fileInput = document.getElementById('upload-file');
+
+    if (uploadZone && fileInput) {
+        uploadZone.addEventListener('click', (e) => {
+            // Only trigger when clicking the background, not inner controls
+            if (e.target === uploadZone) {
+                fileInput.click();
+            }
+        });
+        uploadZone.addEventListener('dragover', handleDragOver);
+        uploadZone.addEventListener('drop', handleDrop);
+        uploadZone.addEventListener('dragleave', handleDragLeave);
+        
+        fileInput.addEventListener('change', handleFileSelect);
+    }
+    
+    // Close modal when clicking outside
+    const clickModal = document.getElementById('uploadModal');
+    if (clickModal) {
+        clickModal.addEventListener('click', function(e) {
+            if (e.target === clickModal) {
+                toggleUpload();
+            }
+        });
+    }
+
+    // Load storage sizes on load
+    refreshStorageSizes();
+    
+    // Debug: Log current category_id value
+    const categorySelect = document.getElementById('categorySelect');
+    if (categorySelect) {
+        console.log('Current category_id from server:', '{{ category_id }}');
+        console.log('Current selected value:', categorySelect.value);
+    }
+});
+
+
+window.autoSearch = function() {
+        // Tự động submit form khi chọn danh mục, thư mục hoặc loại file
+        const form = document.querySelector('.search-form');
+        if (form) {
+            // Kiểm tra category_id và folder_id có hợp lệ không
+            const categorySelect = document.getElementById('categorySelect');
+            const folderSelect = document.getElementById('folderSelect');
+            console.log('Selected category_id:', categorySelect.value);
+            console.log('Selected folder_id:', folderSelect.value);
+            
+            if (categorySelect && categorySelect.value === "" && folderSelect && folderSelect.value === "") {
+                // Nếu chọn "Tất cả danh mục" và "Tất cả thư mục", xóa các params khỏi URL
+                const url = new URL(window.location);
+                url.searchParams.delete('category_id');
+                url.searchParams.delete('folder_id');
+                window.location.href = url.toString();
+                return;
+            }
+        
+        // Thêm loading indicator
+        const submitBtn = form.querySelector('button[type="submit"]');
+        if (submitBtn) {
+            const originalText = submitBtn.innerHTML;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Đang tìm kiếm...';
+            submitBtn.disabled = true;
+            
+            // Reset sau 3 giây nếu không có response
+            setTimeout(() => {
+                submitBtn.innerHTML = originalText;
+                submitBtn.disabled = false;
+            }, 3000);
+        }
+        
+        // Hiển thị thông báo tìm kiếm
+        const documentsInfo = document.querySelector('.documents-info');
+        if (documentsInfo) {
+            documentsInfo.innerHTML = '<small class="text-muted"><i class="fas fa-spinner fa-spin me-1"></i>Đang tìm kiếm...</small>';
+        }
+        
+        // Submit form
+        form.submit();
+    }
+}
+
+function handleDragOver(e) {
+    e.preventDefault();
+    this.classList.add('dragover');
+}
+
+function handleDragLeave(e) {
+    e.preventDefault();
+    this.classList.remove('dragover');
+}
+
+function handleDrop(e) {
+    e.preventDefault();
+    this.classList.remove('dragover');
+    
+    const files = e.dataTransfer.files;
+    handleFiles(files);
+}
+
+function handleFileSelect(e) {
+    const files = e.target.files;
+    handleFiles(files);
+}
+
+function handleFiles(files) {
+    if (files.length > 0) {
+        const file = files[0];
+        const content = document.querySelector('#fileUploadArea .upload-content');
+        if (content) {
+            content.innerHTML = `
+                <i class="fas fa-file text-primary mb-3" style="font-size: 3rem;"></i>
+                <h5>${file.name}</h5>
+                <p class="text-muted">${(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                <button type="button" class="btn btn-outline-primary" onclick="resetFileInput()">
+                    <i class="fas fa-times me-2"></i>
+                    Chọn lại
+                </button>
+            `;
+        }
+    }
+}
+
+function resetFileInput() {
+    const content = document.querySelector('#fileUploadArea .upload-content');
+    if (content) {
+        content.innerHTML = `
+            <i class="fas fa-cloud-upload-alt text-primary mb-3" style="font-size: 3rem;"></i>
+            <h5>Kéo thả file vào đây</h5>
+            <p class="text-muted mb-3">hoặc click để chọn file</p>
+            <button type="button" class="btn btn-outline-primary" onclick="openFilePicker(event)">
+            <button type="button" class="btn btn-outline-primary" onclick="openFilePicker(event)">
+                <i class="fas fa-folder-open me-2"></i>
+                Chọn file
+            </button>
+        `;
+    }
+    
+    // Clear file input
+    const fileInput = document.getElementById('upload-file');
+    if (fileInput) fileInput.value = '';
+}
+
+function openFilePicker(event) {
+    if (event) event.stopPropagation();
+    const fileInput = document.getElementById('upload-file');
+    if (fileInput) fileInput.click();
+}
+
+
+window.deleteDoc = function(id) {
+    if (confirm('Bạn có chắc chắn muốn xóa tài liệu này?')) {
+        fetch(`/documents/${id}`, {
+            method: 'DELETE'
+        })
+        .then(async (response) => {
+            if (response.ok) {
+                showSuccess('Đã xóa', 'Tài liệu đã được xóa thành công');
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1500);
+            } else {
+                let message = 'Có lỗi xảy ra khi xóa';
+                try {
+                    const data = await response.json();
+                    message = data.detail || data.message || message;
+                } catch {}
+                showError('Lỗi', message);
+            }
+        })
+        .catch(error => {
+            showError('Lỗi', 'Có lỗi xảy ra khi xóa');
+        });
+    }
+}
+
+// Notification functions
+window.showSuccess = function(title, message) {
+    showNotification('success', title, message);
+}
+
+window.showError = function(title, message) {
+    showNotification('error', title, message);
+}
+
+window.showNotification = function(type, title, message) {
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+    notification.innerHTML = `
+        <div class="notification-header">
+            <i class="notification-icon fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'}"></i>
+            <h6 class="notification-title">${title}</h6>
+        </div>
+        <p class="notification-message">${message}</p>
+        <button class="notification-close">&times;</button>
+    `;
+    
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        notification.classList.add('show');
+    }, 100);
+    
+    setTimeout(() => {
+        notification.classList.remove('show');
+            setTimeout(() => {
+            document.body.removeChild(notification);
+            }, 300);
+    }, 3000);
+    
+    notification.querySelector('.notification-close').addEventListener('click', () => {
+        notification.classList.remove('show');
+        setTimeout(() => {
+            document.body.removeChild(notification);
+        }, 300);
+    });
+}
+async function refreshStorageSizes() {
+    try {
+        const res = await fetch('/documents/api/storage/sizes');
+        if (!res.ok) return;
+        const data = await res.json();
+        const mb = v => (v / 1024 / 1024).toFixed(1);
+        const setText = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+        setText('totalSize', mb(data.total_size || 0));
+        setText('pdfSize', mb(data.pdf_size || 0));
+        setText('wordSize', mb(data.word_size || 0));
+        setText('imageSize', mb(data.image_size || 0));
+        const totalBar = document.getElementById('totalBar');
+        if (totalBar) {
+            const pct = Math.min(100, ((data.total_size || 0) / (1024 * 1024 * 1024)) * 100);
+            totalBar.style.width = pct.toFixed(1) + '%';
+        }
+    } catch (e) {}
+}
+document.getElementById('uploadForm').addEventListener('submitUpload', async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const data = new FormData(form);
+    const submitBtn = form.querySelector('button[type="submitUpload"]');
+    const originalText = submitBtn.innerHTML;
+    
+    try {
+        // Show loading state
+        submitBtn.innerHTML = '<span class="btn-icon">⏳</span><span class="btn-text">Đang xử lý...</span>';
+        submitBtn.disabled = true;
+        
+        const res = await fetch(form.action, {
+            method: 'POST',
+            body: data
+        });
+        
+        const result = await res.json();
+        
+        if (res.ok) {
+            showAlert('🎉 ' + result.message, 'success');
+            form.reset();
+            toggleUpload();
+            
+            // Update document list without refresh
+            updateDocumentList();
+        } else {
+            throw new Error(result.detail || 'Lỗi khi tải lên');
+        }
+    } catch (err) {
+        showAlert('❌ ' + err.message, 'error');
+    } finally {
+        // Reset button state
+        submitBtn.innerHTML = originalText;
+        submitBtn.disabled = false;
+    }
+});
+
+// Advanced Search functionality
+
+window.toggleAdvancedSearch = function() {
+    const modal = document.getElementById('advancedSearchModal');
+    
+    if (modal) {
+        const currentDisplay = modal.style.display;
+        
+        if (currentDisplay === 'none' || currentDisplay === '') {
+            modal.classList.add('show');
+            modal.classList.add('force-show');
+        } else {
+            modal.classList.remove('show');
+            modal.classList.remove('force-show');
+        }
+    }
+}
+
+window.closeAdvancedSearch = function() {
+    const modal = document.getElementById('advancedSearchModal');
+    if (modal) {
+        modal.classList.remove('show');
+        modal.classList.remove('force-show');
+        modal.style.display = 'none';
+    }
+}
+
+window.resetAdvancedSearch = function() {
+    const form = document.getElementById('advancedSearchForm');
+    if (form) {
+        form.reset();
+    }
+}
+
+window.submitAdvancedSearch = function(event) {
+    event.preventDefault();
+    
+    const form = document.getElementById('advancedSearchForm');
+    const formData = new FormData(form);
+    
+    // Tạo URL với các tham số
+    const params = new URLSearchParams();
+    
+    // Thêm các tham số từ form
+    for (const [key, value] of formData.entries()) {
+        if (value && value.trim() !== '') {
+            params.append(key, value);
+        }
+    }
+    
+    // Chuyển hướng đến trang tìm kiếm
+    const searchUrl = `/documents/?${params.toString()}`;
+    window.location.href = searchUrl;
+}
+
+// Đóng modal khi click bên ngoài
+document.addEventListener('click', function(event) {
+    const modal = document.getElementById('advancedSearchModal');
+    if (modal && event.target === modal) {
+        closeAdvancedSearch();
+    }
+});
+
+// Đóng modal khi nhấn ESC
+document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape') {
+        const modal = document.getElementById('advancedSearchModal');
+        if (modal && modal.classList.contains('show')) {
+            closeAdvancedSearch();
+        }
+    }
+});
+
+// Document Preview functionality
+let currentPreviewDocId = null;
+
+window.previewDocument = async function(docId) {
+    currentPreviewDocId = docId;
+    const modal = document.getElementById('previewModal');
+    const titleElement = document.getElementById('previewTitle');
+    const contentElement = document.getElementById('previewContent');
+    const infoElement = document.getElementById('previewInfo');
+    
+    // Hiển thị modal
+    modal.style.display = 'block';
+    
+    // Reset content
+    contentElement.innerHTML = `
+        <div class="text-center" style="padding: 40px;">
+            <i class="fas fa-spinner fa-spin fa-2x text-primary"></i>
+            <p class="mt-3">Đang tải nội dung...</p>
+        </div>
+    `;
+    
+    try {
+        // Lấy thông tin tài liệu từ API
+        const response = await fetch(`/documents/${docId}/preview`);
+        if (!response.ok) {
+            throw new Error('Không thể tải tài liệu');
+        }
+        
+        const data = await response.json();
+        
+        // Cập nhật title
+        titleElement.textContent = data.title;
+        
+        // Hiển thị nội dung
+        let contentHtml = '';
+        
+        if (data.content) {
+            contentHtml = `
+                <div class="document-preview">
+                    <div class="mb-3">
+                        <h5><i class="fas fa-file-alt me-2"></i>Nội dung</h5>
+                        <div class="border rounded p-3" style="max-height: 400px; overflow-y: auto; background: #f8f9fa;">
+                            <pre style="white-space: pre-wrap; font-family: inherit; margin: 0;">${data.content}</pre>
+                        </div>
+                    </div>
+                </div>
+            `;
+        } else {
+            contentHtml = `
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i>
+                    Tài liệu này không có nội dung text để hiển thị.
+                </div>
+            `;
+        }
+        
+        // Thêm thông tin metadata
+        contentHtml += `
+            <div class="row mt-3">
+                <div class="col-md-6">
+                    <h6><i class="fas fa-info-circle me-2"></i>Thông tin tài liệu</h6>
+                    <ul class="list-unstyled">
+                        <li><strong>Tên file:</strong> ${data.filename}</li>
+                        <li><strong>Loại:</strong> ${data.mime_type || 'Không xác định'}</li>
+                        <li><strong>Kích thước:</strong> ${data.filesize ? (data.filesize / 1024 / 1024).toFixed(2) + ' MB' : 'Không xác định'}</li>
+                        <li><strong>Ngày tạo:</strong> ${new Date(data.created_at).toLocaleString('vi-VN')}</li>
+                    </ul>
+                </div>
+                <div class="col-md-6">
+                    <h6><i class="fas fa-tags me-2"></i>Phân loại</h6>
+                    <ul class="list-unstyled">
+                        ${data.category ? `<li><strong>Danh mục:</strong> <span class="badge" style="background-color: ${data.category.color || '#007bff'}">${data.category.name}</span></li>` : ''}
+                        ${data.folder ? `<li><strong>Thư mục:</strong> <span class="badge" style="background-color: ${data.folder.color || '#6c757d'}">${data.folder.name}</span></li>` : ''}
+                        ${data.tags ? `<li><strong>Tags:</strong> ${data.tags}</li>` : ''}
+                    </ul>
+                </div>
+            </div>
+        `;
+        
+        contentElement.innerHTML = contentHtml;
+        
+        // Cập nhật thông tin footer
+        const fileSize = data.filesize ? (data.filesize / 1024 / 1024).toFixed(2) + ' MB' : 'Không xác định';
+        infoElement.textContent = `${data.filename} • ${fileSize} • ${new Date(data.created_at).toLocaleDateString('vi-VN')}`;
+        
+    } catch (error) {
+        console.error('Error loading document preview:', error);
+        contentElement.innerHTML = `
+            <div class="alert alert-danger">
+                <i class="fas fa-exclamation-triangle me-2"></i>
+                Lỗi khi tải nội dung: ${error.message}
+            </div>
+        `;
+    }
+}
+
+window.closePreview = function() {
+    const modal = document.getElementById('previewModal');
+    modal.style.display = 'none';
+    currentPreviewDocId = null;
+}
+
+window.downloadPreview = function() {
+    if (currentPreviewDocId) {
+        window.open(`/documents/${currentPreviewDocId}/download`, '_blank');
+    }
+}
+
+// Đóng preview modal khi click bên ngoài
+document.addEventListener('click', function(event) {
+    const modal = document.getElementById('previewModal');
+    if (modal && event.target === modal) {
+        closePreview();
+    }
+});
+</script>
+
+<!-- Advanced Search Modal -->
+<div id="advancedSearchModal" class="modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 99999;">
+    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border-radius: 10px; padding: 30px; max-width: 800px; width: 90%; max-height: 80vh; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h4 style="margin: 0; color: #333;">
+                <i class="fas fa-filter me-2"></i>Tìm kiếm nâng cao
+            </h4>
+            <button onclick="closeAdvancedSearch(); event.stopPropagation();" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #999;">&times;</button>
+        </div>
+        
+        <form id="advancedSearchForm" onsubmit="submitAdvancedSearch(event)">
+            <div class="row">
+                <!-- Tìm kiếm cơ bản -->
+                <div class="col-md-6">
+                    <h6 class="mb-3"><i class="fas fa-search me-2"></i>Tìm kiếm cơ bản</h6>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Từ khóa trong nội dung</label>
+                        <input type="text" class="form-control" name="q" placeholder="Nhập từ khóa...">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Tiêu đề</label>
+                        <input type="text" class="form-control" name="title" placeholder="Tìm trong tiêu đề...">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Tags</label>
+                        <input type="text" class="form-control" name="tags" placeholder="Tags (cách nhau bằng dấu phẩy)...">
+                    </div>
+                </div>
+                
+                <!-- Bộ lọc -->
+                <div class="col-md-6">
+                    <h6 class="mb-3"><i class="fas fa-filter me-2"></i>Bộ lọc</h6>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Danh mục</label>
+                        <select class="form-select" name="category_id">
+                            <option value="">Tất cả danh mục</option>
+                            {% for category in categories %}
+                            <option value="{{ category.id }}">{{ category.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Thư mục</label>
+                        <select class="form-select" name="folder_id">
+                            <option value="">Tất cả thư mục</option>
+                            {% for folder in folders %}
+                            <option value="{{ folder.id }}">{{ folder.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Loại file</label>
+                        <select class="form-select" name="type">
+                            <option value="">Tất cả loại</option>
+                            <option value="pdf">PDF</option>
+                            <option value="image">Hình ảnh</option>
+                            <option value="document">Word/Document</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Bộ lọc nâng cao -->
+            <div class="row">
+                <div class="col-12">
+                    <h6 class="mb-3"><i class="fas fa-cogs me-2"></i>Bộ lọc nâng cao</h6>
+                </div>
+                
+                <div class="col-md-4">
+                    <div class="mb-3">
+                        <label class="form-label">Kích thước file</label>
+                        <div class="row">
+                            <div class="col-6">
+                                <input type="number" class="form-control" name="min_size" placeholder="Min (MB)">
+                            </div>
+                            <div class="col-6">
+                                <input type="number" class="form-control" name="max_size" placeholder="Max (MB)">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-4">
+                    <div class="mb-3">
+                        <label class="form-label">Ngày tạo</label>
+                        <div class="row">
+                            <div class="col-6">
+                                <input type="date" class="form-control" name="date_from">
+                            </div>
+                            <div class="col-6">
+                                <input type="date" class="form-control" name="date_to">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-4">
+                    <div class="mb-3">
+                        <label class="form-label">Sắp xếp</label>
+                        <select class="form-select" name="sort_by">
+                            <option value="relevance">Độ liên quan</option>
+                            <option value="date">Ngày tạo</option>
+                            <option value="title">Tiêu đề</option>
+                            <option value="size">Kích thước</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Tùy chọn tìm kiếm -->
+            <div class="row">
+                <div class="col-12">
+                    <h6 class="mb-3"><i class="fas fa-sliders-h me-2"></i>Tùy chọn tìm kiếm</h6>
+                </div>
+                
+                <div class="col-md-6">
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" name="fuzzy" id="fuzzy">
+                        <label class="form-check-label" for="fuzzy">
+                            Tìm kiếm gần đúng (Fuzzy search)
+                        </label>
+                    </div>
+                    
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" name="wildcard" id="wildcard">
+                        <label class="form-check-label" for="wildcard">
+                            Tìm kiếm ký tự đại diện (*, ?)
+                        </label>
+                    </div>
+                    
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" name="boolean" id="boolean">
+                        <label class="form-check-label" for="boolean">
+                            Toán tử Boolean (AND, OR, NOT)
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="col-md-6">
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" name="case_sensitive" id="case_sensitive">
+                        <label class="form-check-label" for="case_sensitive">
+                            Phân biệt hoa thường
+                        </label>
+                    </div>
+                    
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" name="exact_match" id="exact_match">
+                        <label class="form-check-label" for="exact_match">
+                            Khớp chính xác
+                        </label>
+                    </div>
+                    
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" name="include_content" id="include_content">
+                        <label class="form-check-label" for="include_content">
+                            Tìm trong nội dung file
+                        </label>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Nút hành động -->
+            <div class="d-flex justify-content-end gap-2 mt-4">
+                <button type="button" class="btn btn-secondary" onclick="closeAdvancedSearch(); event.stopPropagation();">
+                    <i class="fas fa-times me-1"></i>Hủy
+                </button>
+                <button type="button" class="btn btn-outline-primary" onclick="resetAdvancedSearch()">
+                    <i class="fas fa-undo me-1"></i>Đặt lại
+                </button>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-search me-1"></i>Tìm kiếm
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Document Preview Modal -->
+<div id="previewModal" class="modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999;">
+    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border-radius: 10px; padding: 20px; max-width: 90%; max-height: 90%; width: 1000px; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 15px;">
+            <h4 style="margin: 0; color: #333;">
+                <i class="fas fa-file-alt me-2"></i><span id="previewTitle">Xem trước tài liệu</span>
+            </h4>
+            <button onclick="closePreview()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #999;">&times;</button>
+        </div>
+        
+        <div id="previewContent">
+            <div class="text-center" style="padding: 40px;">
+                <i class="fas fa-spinner fa-spin fa-2x text-primary"></i>
+                <p class="mt-3">Đang tải nội dung...</p>
+            </div>
+        </div>
+        
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px; padding-top: 15px; border-top: 1px solid #eee;">
+            <div>
+                <small class="text-muted" id="previewInfo"></small>
+            </div>
+            <div>
+                <button class="btn btn-outline-primary me-2" onclick="downloadPreview()">
+                    <i class="fas fa-download me-1"></i>Tải xuống
+                </button>
+                <button class="btn btn-secondary" onclick="closePreview()">
+                    <i class="fas fa-times me-1"></i>Đóng
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
