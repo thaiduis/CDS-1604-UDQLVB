@@ -66,11 +66,15 @@ Cấu trúc thư mục chính:
 
 - Trang danh sách tài liệu, tìm kiếm nâng cao, phân trang (tối đa 5 mục/trang)
 
-  ![Server GUI](docs/quanly.png)
+  ![Server GUI](docs/dashboard.png)
   
 - Trang chi tiết với tìm kiếm trong nội dung, highlight không dấu và fuzzy, toast thông báo
 
-  ![Server GUI](docs/chitiet.png)
+  ![Server GUI](docs/search.png)
+
+  - Trang biểu đồ phân tích
+
+  ![Server GUI](docs/analytics.png)
 
 ---
 
