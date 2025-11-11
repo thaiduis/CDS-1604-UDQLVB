@@ -20,28 +20,6 @@
 
 ## 📖 1. Giới thiệu
 
-<h2 align="center">
-    <a href="https://dainam.edu.vn/vi/khoa-cong-nghe-thong-tin">
-    🎓 Faculty of Information Technology (DaiNam University)
-    </a>
-</h2>
-<h2 align="center">
-   Ứng dụng quản lý văn bản kết hợp tìm kiếm nâng cao
-</h2>
-<div align="center">
-    <p align="center">
-        <img src="docs/aiotlab_logo.png" alt="AIoTLab Logo" width="170"/>
-        <img src="docs/fitdnu_logo.png" alt="AIoTLab Logo" width="180"/>
-        <img src="docs/dnu_logo.png" alt="DaiNam University Logo" width="200"/>
-    </p>
-
-[![AIoTLab](https://img.shields.io/badge/AIoTLab-green?style=for-the-badge)](https://www.facebook.com/DNUAIoTLab)
-[![Faculty of Information Technology](https://img.shields.io/badge/Faculty%20of%20Information%20Technology-blue?style=for-the-badge)](https://dainam.edu.vn/vi/khoa-cong-nghe-thong-tin)
-[![DaiNam University](https://img.shields.io/badge/DaiNam%20University-orange?style=for-the-badge)](https://dainam.edu.vn)
-</div>
-
-## 📖 1. Giới thiệu
-
 Đây là dự án xây dựng một ứng dụng web quản lý tài liệu mạnh mẽ, cho phép người dùng tải lên, lưu trữ, tổ chức và tìm kiếm thông tin trong nhiều loại tài liệu khác nhau (PDF, DOCX, ảnh). Điểm nổi bật của hệ thống là khả năng trích xuất văn bản từ các tài liệu được quét bằng công nghệ Nhận dạng Ký tự Quang học (OCR) và cung cấp các tính năng tìm kiếm nâng cao như tìm kiếm không dấu và tìm kiếm mờ (fuzzy search).
 
 Các chức năng chính:
